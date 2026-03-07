@@ -238,7 +238,6 @@ st.markdown("---")
 
 
 # ── Portfolio weights & stats table ──────────────────────────────────────────────
-st.markdown("### Portfolio Details")
 
 portfolios = {
     "GMV": w_gmv,
@@ -254,13 +253,26 @@ for name, w in portfolios.items():
     row["Monthly Return"] = f"{port_rets[name]:.4%}"
     row["Monthly Std Dev"] = f"{port_stds[name]:.4%}"
     row["Sharpe Ratio"]    = f"{sharpe(port_rets[name], port_stds[name], rf_rate):.3f}"
-    for ticker, weight in zip(valid_stocks, w):
-        row[ticker] = f"{weight:.2%}"
+    # for ticker, weight in zip(valid_stocks, w):
+    #     row[ticker] = f"{weight:.2%}"
     rows.append(row)
 
-table_df = pd.DataFrame(rows).set_index("Portfolio")
-st.dataframe(table_df, use_container_width=True)
+weights_dict = {
+    'EW': w_ew,
+    'GMV': w_gmv,
+    'Max Sharpe': w_tan,
+}
 
+c11, c21 = st.columns(2)
+with c11:
+    st.markdown("### Portfolio Analytics")
+    table_df = pd.DataFrame(rows).set_index("Portfolio")
+    st.dataframe(table_df, use_container_width=True)
+
+with c21:
+    st.markdown("### Portfolio Weights")
+    table_df_weights = pd.DataFrame(weights_dict, index = valid_stocks)
+    st.dataframe(table_df_weights, use_container_width=True)
 
 st.markdown("---")
 
