@@ -1,0 +1,402 @@
+"""
+dashboard.py
+------------
+Streamlit / Plotly UI layer.
+All page configuration, CSS injection, sidebar rendering, metric cards,
+data tables, and chart building live here.
+"""
+from __future__ import annotations
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+from src.frontier import FrontierResults, sharpe
+
+# ── Colour palette ───────────────────────────────────────────────────────────
+
+COLORS = {
+    "frontier": "#888888",
+    "cml":      "#ff6b6b",
+    "assets":   "#7ec8e3",
+    "gmv":      "#f0e68c",
+    "tangency": "#90ee90",
+    "rf":       "#ff6b6b",
+    "ew":       "#c9a0ff",
+}
+BG   = "#0d0d0d"
+GRID = "#1e1e1e"
+
+_CSS = """
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background-color: #0d0d0d;
+    color: #e8e8e0;
+  }
+  h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
+
+  /* Sidebar */
+  section[data-testid="stSidebar"] {
+    background: #141414;
+    border-right: 1px solid #2a2a2a;
+  }
+
+  /* Metric cards */
+  div[data-testid="metric-container"] {
+    background: #181818;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 12px 16px;
+  }
+  div[data-testid="metric-container"] label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 22px;
+    color: #f0e68c;
+  }
+
+  /* Dataframe */
+  .stDataFrame { border: 1px solid #2a2a2a; border-radius: 6px; }
+  .stDataFrame th {
+    font-family: 'IBM Plex Mono', monospace;
+    background: #181818 !important;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #888 !important;
+  }
+
+  /* Divider accent */
+  hr { border-color: #2a2a2a; }
+</style>
+"""
+
+
+# ── Page setup ───────────────────────────────────────────────────────────────
+
+def setup_page() -> None:
+    st.set_page_config(
+        page_title="Efficient Frontier",
+        page_icon="📈",
+        layout="wide",
+    )
+    st.markdown(_CSS, unsafe_allow_html=True)
+
+
+# ── Sidebar ──────────────────────────────────────────────────────────────────
+
+def render_sidebar() -> dict:
+    """
+    Draw the sidebar controls and return a dict of user inputs:
+        tickers_raw, start_date, end_date, run
+
+    RF rate and analysis date range are handled in the main area via
+    render_analysis_controls() so they don't trigger a data re-download.
+    """
+    with st.sidebar:
+        st.markdown("## ⚙️ Data Source")
+        st.markdown("---")
+
+        tickers_raw = st.text_area(
+            "Tickers (one per line or comma-separated)",
+            value="F\nPFE\nCVX\nWMT\nSBUX\nAMZN\nDIS\nCOST\nMMM",
+            height=200,
+        )
+
+        st.markdown("---")
+        st.markdown("**Download Date Range**")
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Start", value=pd.Timestamp("2015-01-01"))
+        with col2:
+            end_date = st.date_input("End", value=pd.Timestamp("today"))
+
+        st.markdown("---")
+        run = st.button("▶  Run Analysis", use_container_width=True)
+
+    return dict(
+        tickers_raw=tickers_raw,
+        start_date=start_date,
+        end_date=end_date,
+        run=run,
+    )
+
+
+# ── Header ───────────────────────────────────────────────────────────────────
+
+def render_header() -> None:
+    st.markdown("# 📈 Efficient Frontier")
+    st.markdown("*Monthly historical risk-return tradeoff with Capital Market Line*")
+    st.markdown("---")
+
+
+# ── Analysis controls (main area) ────────────────────────────────────────────
+
+def render_analysis_controls(
+    prices_index: pd.DatetimeIndex,
+    default_rf: float = 0.001,
+) -> dict:
+    """
+    Render the interactive analysis controls in the main content area.
+    These do NOT trigger a data re-download — only a frontier recomputation.
+
+    Returns
+    -------
+    dict with keys: start, end, rf_rate
+    """
+    st.markdown("### Analysis Parameters")
+    st.caption(
+        "Adjust the window and risk-free rate without re-downloading data. "
+        "The frontier and CML update instantly."
+    )
+
+    col1, col2, col3 = st.columns([3, 3, 2])
+    with col1:
+        analysis_start = st.date_input(
+            "Analysis window — Start",
+            value=prices_index.min().date(),
+            min_value=prices_index.min().date(),
+            max_value=prices_index.max().date(),
+            key="analysis_start",
+        )
+    with col2:
+        analysis_end = st.date_input(
+            "Analysis window — End",
+            value=prices_index.max().date(),
+            min_value=prices_index.min().date(),
+            max_value=prices_index.max().date(),
+            key="analysis_end",
+        )
+    with col3:
+        rf_rate = st.number_input(
+            "Monthly Risk-Free Rate",
+            min_value=0.0,
+            max_value=0.05,
+            value=default_rf,
+            step=0.0001,
+            format="%.4f",
+            key="rf_rate",
+        )
+    st.markdown("---")
+    return dict(start=analysis_start, end=analysis_end, rf_rate=rf_rate)
+
+
+# ── Metric cards ─────────────────────────────────────────────────────────────
+
+def render_metrics(
+    valid_stocks: list[str],
+    returns: pd.DataFrame,
+    results: FrontierResults,
+    rf_rate: float,
+) -> None:
+    st.markdown("### Portfolio Summary")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1:
+        st.metric("Tickers", len(valid_stocks))
+    with c2:
+        st.metric("Months", len(returns))
+    with c3:
+        st.metric("GMV Return", f"{results.gmv_ret:.2%}")
+    with c4:
+        st.metric("GMV Volatility", f"{results.gmv_std:.2%}")
+    with c5:
+        st.metric("Tangency Return", f"{results.tan_ret:.2%}")
+    with c6:
+        st.metric(
+            "Tangency Sharpe",
+            f"{sharpe(results.tan_ret, results.tan_std, rf_rate):.2f}",
+        )
+    st.markdown("---")
+
+
+# ── Analytics & weights tables ───────────────────────────────────────────────
+
+def render_tables(
+    valid_stocks: list[str],
+    results: FrontierResults,
+    rf_rate: float,
+) -> None:
+    portfolios = {
+        "GMV":                  (results.w_gmv, results.gmv_ret, results.gmv_std),
+        "Max Sharpe (Tangency)":(results.w_tan, results.tan_ret, results.tan_std),
+        "Equal Weight":         (results.w_ew,  results.ew_ret,  results.ew_std),
+    }
+
+    rows = []
+    for name, (_, ret, std) in portfolios.items():
+        rows.append({
+            "Portfolio":     name,
+            "Monthly Return": f"{ret:.4%}",
+            "Monthly Std Dev": f"{std:.4%}",
+            "Sharpe Ratio":   f"{sharpe(ret, std, rf_rate):.3f}",
+        })
+
+    weights_dict = {
+        "EW":        results.w_ew,
+        "GMV":       results.w_gmv,
+        "Max Sharpe": results.w_tan,
+    }
+
+    c11, c21 = st.columns(2)
+    with c11:
+        st.markdown("### Portfolio Analytics")
+        st.dataframe(
+            pd.DataFrame(rows).set_index("Portfolio"),
+            use_container_width=True,
+        )
+    with c21:
+        st.markdown("### Portfolio Weights")
+        st.dataframe(
+            pd.DataFrame(weights_dict, index=valid_stocks),
+            use_container_width=True,
+        )
+    st.markdown("---")
+
+
+# ── Plotly chart ─────────────────────────────────────────────────────────────
+
+def build_chart(
+    results: FrontierResults,
+    miu: pd.Series,
+    std_dev: pd.Series,
+    valid_stocks: list[str],
+    rf_rate: float,
+) -> go.Figure:
+    fig = go.Figure()
+
+    # Efficient frontier
+    fig.add_trace(go.Scatter(
+        x=results.frontier_vols, y=results.frontier_rets,
+        mode="lines",
+        name="Efficient Frontier",
+        line=dict(color=COLORS["frontier"], width=2.5),
+        hovertemplate="Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # CML
+    fig.add_trace(go.Scatter(
+        x=results.cml_vols, y=results.cml_rets,
+        mode="lines",
+        name="Capital Market Line",
+        line=dict(color=COLORS["cml"], width=2, dash="dash"),
+        hovertemplate="Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # Individual assets
+    fig.add_trace(go.Scatter(
+        x=std_dev.values, y=miu.values,
+        mode="markers+text",
+        name="Assets",
+        marker=dict(color=COLORS["assets"], size=9, symbol="circle",
+                    line=dict(color="#ffffff", width=0.5)),
+        text=valid_stocks,
+        textposition="top right",
+        textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["assets"]),
+        hovertemplate="<b>%{text}</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # Equal weight
+    fig.add_trace(go.Scatter(
+        x=[results.ew_std], y=[results.ew_ret],
+        mode="markers+text",
+        name="Equal Weight",
+        marker=dict(color=COLORS["ew"], size=16, symbol="diamond",
+                    line=dict(color="#ffffff", width=1)),
+        text=["1/N"],
+        textposition="top right",
+        textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["ew"]),
+        hovertemplate="<b>Equal Weight</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # GMV
+    fig.add_trace(go.Scatter(
+        x=[results.gmv_std], y=[results.gmv_ret],
+        mode="markers+text",
+        name="GMV",
+        marker=dict(color=COLORS["gmv"], size=18, symbol="star",
+                    line=dict(color="#ffffff", width=1)),
+        text=["GMV"],
+        textposition="top right",
+        textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["gmv"]),
+        hovertemplate="<b>GMV</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # Tangency / Max Sharpe
+    fig.add_trace(go.Scatter(
+        x=[results.tan_std], y=[results.tan_ret],
+        mode="markers+text",
+        name="Max Sharpe (Tangency)",
+        marker=dict(color=COLORS["tangency"], size=18, symbol="star",
+                    line=dict(color="#ffffff", width=1)),
+        text=["Tangency"],
+        textposition="top right",
+        textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["tangency"]),
+        hovertemplate="<b>Tangency</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+    ))
+
+    # Risk-free rate
+    fig.add_trace(go.Scatter(
+        x=[0], y=[rf_rate],
+        mode="markers+text",
+        name="Risk-Free Rate",
+        marker=dict(color=COLORS["rf"], size=12, symbol="circle",
+                    line=dict(color="#ffffff", width=1)),
+        text=["Rf"],
+        textposition="top right",
+        textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["rf"]),
+        hovertemplate=f"<b>Risk-Free Rate</b><br>{rf_rate:.4%}<extra></extra>",
+    ))
+
+    fig.update_layout(
+        paper_bgcolor=BG,
+        plot_bgcolor=BG,
+        font=dict(family="IBM Plex Mono", color="#e8e8e0"),
+        xaxis=dict(
+            title="Monthly Volatility (Std Dev)",
+            tickformat=".1%",
+            gridcolor=GRID,
+            zerolinecolor=GRID,
+            title_font=dict(size=12),
+        ),
+        yaxis=dict(
+            title="Monthly Return",
+            tickformat=".2%",
+            gridcolor=GRID,
+            zerolinecolor=GRID,
+            title_font=dict(size=12),
+        ),
+        legend=dict(
+            bgcolor="#141414",
+            bordercolor="#2a2a2a",
+            borderwidth=1,
+            font=dict(size=11),
+        ),
+        margin=dict(l=60, r=40, t=40, b=60),
+        height=580,
+        hovermode="closest",
+    )
+    return fig
+
+
+def render_chart(
+    results: FrontierResults,
+    miu: pd.Series,
+    std_dev: pd.Series,
+    valid_stocks: list[str],
+    rf_rate: float,
+) -> None:
+    st.markdown("### Efficient Frontier & Capital Market Line")
+    fig = build_chart(results, miu, std_dev, valid_stocks, rf_rate)
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"Data: Yahoo Finance · Interval: Monthly · RF Rate: {rf_rate:.4%}/month"
+    )
