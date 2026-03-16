@@ -9,6 +9,7 @@ __pycache__/
 .idea/
 .github/
 .claude/
+resources/
 
 
 # Distribution / packaging
