@@ -11,7 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.frontier import FrontierResults, sharpe
+from src.portfolio_construction.frontier import FrontierResults, sharpe
 
 # ── Colour palette ───────────────────────────────────────────────────────────
 

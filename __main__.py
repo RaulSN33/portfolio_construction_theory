@@ -1,5 +1,5 @@
 """
-efficient_frontier_dashboard.py
+__main__.py
 --------------------------------
 Entry point. Wires together the three src modules:
   src.dashboard  – Streamlit / Plotly UI
@@ -19,8 +19,8 @@ Data-download workflow
 import pandas as pd
 import streamlit as st
 
-from src.backend import DownloadError, load_market_data, parse_tickers
-from src.dashboard import (
+from src.backend.backend import DownloadError, load_market_data, parse_tickers
+from src.dashboard.dashboard import (
     render_analysis_controls,
     render_chart,
     render_header,
@@ -29,7 +29,7 @@ from src.dashboard import (
     render_tables,
     setup_page,
 )
-from src.frontier import compute_efficient_frontier
+from src.portfolio_construction.frontier import compute_efficient_frontier
 
 # ── Page configuration & CSS (must be the first Streamlit call) ──────────────
 setup_page()
