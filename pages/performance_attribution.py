@@ -11,10 +11,7 @@ Data flow
 3. Results are persisted in st.session_state["attr_results"] so that switching
    away and back to this page does not trigger a re-download.
 """
-import os
-
 import streamlit as st
-from dotenv import load_dotenv
 
 from src.dashboard.attribution_dashboard import (
     render_attribution_charts,
@@ -23,9 +20,6 @@ from src.dashboard.attribution_dashboard import (
     render_attribution_sidebar,
 )
 from src.portfolio_construction.performance_attribution import compute_attribution
-
-# Load FRED_API_KEY from .env if present
-load_dotenv()
 
 # ── Sidebar inputs ────────────────────────────────────────────────────────────
 inputs = render_attribution_sidebar()
@@ -37,11 +31,11 @@ if not inputs["run"] and "attr_results" not in st.session_state:
 
 # ── Run attribution when button is clicked ────────────────────────────────────
 if inputs["run"]:
-    fred_key = os.getenv("FRED_API_KEY")
+    fred_key = st.secrets.get("FRED_API_KEY")
     if not fred_key:
         st.error(
             "**FRED API key not found.** "
-            "Add `FRED_API_KEY=your_key` to a `.env` file in the project root. "
+            "Add `FRED_API_KEY = 'your_key'` to `.streamlit/secrets.toml`. "
             "Get a free key at https://fred.stlouisfed.org/docs/api/api_key.html"
         )
         st.stop()
