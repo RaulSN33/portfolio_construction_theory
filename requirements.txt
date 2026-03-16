@@ -3,4 +3,7 @@ yfinance~=0.2.58
 numpy~=1.26.4
 plotly~=6.0.1
 streamlit~=1.55
+statsmodels~=0.14.4
+fredapi~=0.5.2
+python-dotenv~=1.0.1
 git+https://github.com/RaulSN33/PortfolioBacktester.git@main
