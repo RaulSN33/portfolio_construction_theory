@@ -12,17 +12,21 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.portfolio_construction.frontier import FrontierResults, sharpe
+from src.portfolio_construction.optimizations import ConstrainedResults
 
 # ── Colour palette ───────────────────────────────────────────────────────────
 
 COLORS = {
-    "frontier": "#888888",
-    "cml":      "#ff6b6b",
-    "assets":   "#7ec8e3",
-    "gmv":      "#f0e68c",
-    "tangency": "#90ee90",
-    "rf":       "#ff6b6b",
-    "ew":       "#c9a0ff",
+    "frontier":             "#888888",
+    "frontier_constrained": "#4e8bc4",
+    "cml":                  "#ff6b6b",
+    "assets":               "#7ec8e3",
+    "gmv":                  "#f0e68c",
+    "gmv_constrained":      "#ffa94d",
+    "tangency":             "#90ee90",
+    "tangency_constrained": "#69d2e7",
+    "rf":                   "#ff6b6b",
+    "ew":                   "#c9a0ff",
 }
 _CSS = """
 <style>
@@ -204,27 +208,33 @@ def render_tables(
     valid_stocks: list[str],
     results: FrontierResults,
     rf_rate: float,
+    constrained: ConstrainedResults | None = None,
 ) -> None:
     portfolios = {
-        "GMV":                  (results.w_gmv, results.gmv_ret, results.gmv_std),
-        "Max Sharpe (Tangency)":(results.w_tan, results.tan_ret, results.tan_std),
-        "Equal Weight":         (results.w_ew,  results.ew_ret,  results.ew_std),
+        "GMV (unconstrained)":         (results.w_gmv, results.gmv_ret, results.gmv_std),
+        "Max Sharpe (unconstrained)":  (results.w_tan, results.tan_ret, results.tan_std),
+        "Equal Weight":                (results.w_ew,  results.ew_ret,  results.ew_std),
     }
+    weights_dict = {
+        "EW":              results.w_ew,
+        "GMV":             results.w_gmv,
+        "Max Sharpe":      results.w_tan,
+    }
+
+    if constrained is not None:
+        portfolios["GMV (constrained)"]        = (constrained.w_gmv, constrained.gmv_ret, constrained.gmv_std)
+        portfolios["Max Sharpe (constrained)"] = (constrained.w_tan, constrained.tan_ret, constrained.tan_std)
+        weights_dict["C-GMV"]        = constrained.w_gmv
+        weights_dict["C-Max Sharpe"] = constrained.w_tan
 
     rows = []
     for name, (_, ret, std) in portfolios.items():
         rows.append({
-            "Portfolio":     name,
-            "Monthly Return": f"{ret:.4%}",
+            "Portfolio":       name,
+            "Monthly Return":  f"{ret:.4%}",
             "Monthly Std Dev": f"{std:.4%}",
-            "Sharpe Ratio":   f"{sharpe(ret, std, rf_rate):.3f}",
+            "Sharpe Ratio":    f"{sharpe(ret, std, rf_rate):.3f}",
         })
-
-    weights_dict = {
-        "EW":        results.w_ew,
-        "GMV":       results.w_gmv,
-        "Max Sharpe": results.w_tan,
-    }
 
     c11, c21 = st.columns(2)
     with c11:
@@ -250,17 +260,28 @@ def build_frontier_chart(
     std_dev: pd.Series,
     valid_stocks: list[str],
     rf_rate: float,
+    constrained: ConstrainedResults | None = None,
 ) -> go.Figure:
     fig = go.Figure()
 
-    # Efficient frontier
+    # Efficient frontier (unconstrained)
     fig.add_trace(go.Scatter(
         x=results.frontier_vols, y=results.frontier_rets,
         mode="lines",
-        name="Efficient Frontier",
+        name="Efficient Frontier (unconstrained)",
         line=dict(color=COLORS["frontier"], width=2.5),
         hovertemplate="Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
     ))
+
+    # Constrained frontier
+    if constrained is not None:
+        fig.add_trace(go.Scatter(
+            x=constrained.frontier_vols, y=constrained.frontier_rets,
+            mode="lines",
+            name="Efficient Frontier (constrained)",
+            line=dict(color=COLORS["frontier_constrained"], width=2.5, dash="dot"),
+            hovertemplate="Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+        ))
 
     # CML
     fig.add_trace(go.Scatter(
@@ -297,24 +318,24 @@ def build_frontier_chart(
         hovertemplate="<b>Equal Weight</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
     ))
 
-    # GMV
+    # GMV (unconstrained)
     fig.add_trace(go.Scatter(
         x=[results.gmv_std], y=[results.gmv_ret],
         mode="markers+text",
-        name="GMV",
+        name="GMV (unconstrained)",
         marker=dict(color=COLORS["gmv"], size=18, symbol="star",
                     line=dict(color="#ffffff", width=1)),
         text=["GMV"],
         textposition="top right",
         textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["gmv"]),
-        hovertemplate="<b>GMV</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+        hovertemplate="<b>GMV (unconstrained)</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
     ))
 
-    # Tangency / Max Sharpe
+    # Tangency / Max Sharpe (unconstrained)
     fig.add_trace(go.Scatter(
         x=[results.tan_std], y=[results.tan_ret],
         mode="markers+text",
-        name="Max Sharpe (Tangency)",
+        name="Max Sharpe (unconstrained)",
         marker=dict(color=COLORS["tangency"], size=18, symbol="star",
                     line=dict(color="#ffffff", width=1)),
         text=["Tangency"],
@@ -322,6 +343,31 @@ def build_frontier_chart(
         textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["tangency"]),
         hovertemplate="<b>Tangency</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
     ))
+
+    # Constrained GMV and Max Sharpe
+    if constrained is not None:
+        fig.add_trace(go.Scatter(
+            x=[constrained.gmv_std], y=[constrained.gmv_ret],
+            mode="markers+text",
+            name="GMV (constrained)",
+            marker=dict(color=COLORS["gmv_constrained"], size=18, symbol="star",
+                        line=dict(color="#ffffff", width=1)),
+            text=["C-GMV"],
+            textposition="top right",
+            textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["gmv_constrained"]),
+            hovertemplate="<b>GMV (constrained)</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+        ))
+        fig.add_trace(go.Scatter(
+            x=[constrained.tan_std], y=[constrained.tan_ret],
+            mode="markers+text",
+            name="Max Sharpe (constrained)",
+            marker=dict(color=COLORS["tangency_constrained"], size=18, symbol="star",
+                        line=dict(color="#ffffff", width=1)),
+            text=["C-Tangency"],
+            textposition="top right",
+            textfont=dict(family="IBM Plex Mono", size=11, color=COLORS["tangency_constrained"]),
+            hovertemplate="<b>Tangency (constrained)</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>",
+        ))
 
     # Risk-free rate
     fig.add_trace(go.Scatter(
@@ -365,9 +411,10 @@ def render_chart(
     std_dev: pd.Series,
     valid_stocks: list[str],
     rf_rate: float,
+    constrained: ConstrainedResults | None = None,
 ) -> None:
     st.markdown("### Efficient Frontier & Capital Market Line")
-    fig = build_frontier_chart(results, miu, std_dev, valid_stocks, rf_rate)
+    fig = build_frontier_chart(results, miu, std_dev, valid_stocks, rf_rate, constrained)
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
         f"Data: Yahoo Finance · Interval: Monthly · RF Rate: {rf_rate:.4%}/month"

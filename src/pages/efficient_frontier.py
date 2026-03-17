@@ -17,6 +17,7 @@ from src.dashboard.frontier_dashboard import (
     render_tables,
 )
 from src.portfolio_construction.frontier import compute_efficient_frontier
+from src.portfolio_construction.optimizations import compute_constrained_frontier
 
 
 # ── Sidebar inputs ────────────────────────────────────────────────────────────
@@ -95,7 +96,10 @@ rf_rate = analysis["rf_rate"]
 
 results = compute_efficient_frontier(miu, sigma, rf_rate=rf_rate)
 
+with st.spinner("Computing constrained frontier…"):
+    constrained = compute_constrained_frontier(miu, sigma, rf_rate=rf_rate)
+
 # ── Render results ────────────────────────────────────────────────────────────
 render_metrics(valid_stocks, returns_filtered, results, rf_rate=rf_rate)
-render_tables(valid_stocks, results, rf_rate=rf_rate)
-render_chart(results, miu, std_dev, valid_stocks, rf_rate=rf_rate)
+render_tables(valid_stocks, results, rf_rate=rf_rate, constrained=constrained)
+render_chart(results, miu, std_dev, valid_stocks, rf_rate=rf_rate, constrained=constrained)
