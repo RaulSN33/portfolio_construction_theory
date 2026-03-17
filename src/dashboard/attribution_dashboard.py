@@ -109,7 +109,7 @@ def render_attribution_sidebar() -> dict:
 # ── Page header ───────────────────────────────────────────────────────────────
 
 def render_attribution_header(stock: str, window_size: int) -> None:
-    st.markdown(f"# 🔍 Performance Attribution — {stock}")
+    st.markdown(f"# Performance Attribution — {stock}")
     st.markdown(
         f"*Rolling {window_size}-month CAPM regression · "
         "Return & risk decomposition vs S&P 500*"

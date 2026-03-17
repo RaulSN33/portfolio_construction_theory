@@ -114,7 +114,7 @@ def render_sidebar() -> dict:
 # ── Header ───────────────────────────────────────────────────────────────────
 
 def render_header() -> None:
-    st.markdown("# 📈 Efficient Frontier")
+    st.markdown("# Efficient Frontier")
     st.markdown("*Monthly historical risk-return tradeoff with Capital Market Line*")
     st.markdown("---")
 
