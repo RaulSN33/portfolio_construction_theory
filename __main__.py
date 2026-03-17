@@ -17,7 +17,7 @@ Run
 """
 import streamlit as st
 
-from src.dashboard.dashboard import _CSS
+from src.dashboard.frontier_dashboard import _CSS
 
 st.set_page_config(
     page_title="Portfolio Construction",
@@ -27,8 +27,8 @@ st.set_page_config(
 st.markdown(_CSS, unsafe_allow_html=True)
 
 pages = [
-    st.Page("pages/efficient_frontier.py",     title="Efficient Frontier",     icon="📈"),
-    st.Page("pages/performance_attribution.py", title="Performance Attribution", icon="🔍"),
+    st.Page("src/pages/efficient_frontier.py", title="Efficient Frontier", icon="📈"),
+    st.Page("src/pages/performance_attribution.py", title="Performance Attribution", icon="🔍"),
 ]
 
 pg = st.navigation(pages)

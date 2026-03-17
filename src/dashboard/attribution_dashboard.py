@@ -3,9 +3,6 @@ attribution_dashboard.py
 ------------------------
 Streamlit / Plotly UI layer for the Performance Attribution page.
 
-Mirrors the dark-theme conventions of dashboard.py:
-  BG = #0d0d0d, GRID = #1e1e1e, IBM Plex Mono font.
-
 Charts
 ------
   1. Scatter — stock vs market excess returns with static OLS regression line
@@ -26,26 +23,19 @@ from src.portfolio_construction.performance_attribution import AttributionResult
 
 # ── Colour palette ────────────────────────────────────────────────────────────
 
-BG   = "#0d0d0d"
-GRID = "#1e1e1e"
-
 ATTR = {
-    "actual": "#e8e8e0",   # near-white — actual return line
-    "factor": "#4e8bc4",   # steelblue  — factor / systematic / beta
-    "idio":   "#ff9f40",   # orange     — idiosyncratic / alpha
-    "zero":   "#444444",   # muted grey — reference lines at 0 or 1
+    "actual": "#666666",   # medium grey — actual return line (visible on light & dark)
+    "factor": "#4e8bc4",   # steelblue   — factor / systematic / beta
+    "idio":   "#ff9f40",   # orange      — idiosyncratic / alpha
+    "zero":   "#888888",   # muted grey  — reference lines at 0 or 1
 }
 
 _FONT = "IBM Plex Mono"
 
 # Base layout shared across all charts
 _BASE = dict(
-    paper_bgcolor=BG,
-    plot_bgcolor=BG,
-    font=dict(family=_FONT, color="#e8e8e0"),
+    font=dict(family=_FONT),
     legend=dict(
-        bgcolor="#141414",
-        bordercolor="#2a2a2a",
         borderwidth=1,
         font=dict(size=11),
     ),
@@ -54,7 +44,7 @@ _BASE = dict(
     hovermode="x unified",
 )
 
-_AXIS_DEFAULTS = dict(gridcolor=GRID, zerolinecolor=GRID, title_font=dict(size=12))
+_AXIS_DEFAULTS = dict(title_font=dict(size=12))
 
 
 def _axis(title: str, fmt: str | None = None, **extra) -> dict:
@@ -255,14 +245,11 @@ def build_rolling_params_chart(res: AttributionResults) -> go.Figure:
         ),
         showlegend=True,
     )
-    fig.update_yaxes(title_text="Beta",  gridcolor=GRID, zerolinecolor=GRID, row=1, col=1)
-    fig.update_yaxes(title_text="Alpha", gridcolor=GRID, zerolinecolor=GRID,
-                     tickformat=".2%", row=2, col=1)
-    fig.update_xaxes(gridcolor=GRID, zerolinecolor=GRID)
+    fig.update_yaxes(title_text="Beta",  row=1, col=1)
+    fig.update_yaxes(title_text="Alpha", tickformat=".2%", row=2, col=1)
 
     # Style the auto-generated subplot titles
     for ann in fig.layout.annotations:
-        ann.font.color  = "#e8e8e0"
         ann.font.family = _FONT
         ann.font.size   = 12
 

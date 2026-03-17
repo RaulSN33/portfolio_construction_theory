@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from src.backend.backend import DownloadError, load_market_data, parse_tickers
-from src.dashboard.dashboard import (
+from src.dashboard.frontier_dashboard import (
     render_analysis_controls,
     render_chart,
     render_header,

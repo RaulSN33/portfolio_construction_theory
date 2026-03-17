@@ -1,5 +1,5 @@
 """
-dashboard.py
+frontier_dashboard.py
 ------------
 Streamlit / Plotly UI layer.
 All page configuration, CSS injection, sidebar rendering, metric cards,
@@ -24,59 +24,39 @@ COLORS = {
     "rf":       "#ff6b6b",
     "ew":       "#c9a0ff",
 }
-BG   = "#0d0d0d"
-GRID = "#1e1e1e"
-
 _CSS = """
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
 
   html, body, [class*="css"] {
     font-family: 'IBM Plex Sans', sans-serif;
-    background-color: #0d0d0d;
-    color: #e8e8e0;
   }
   h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
 
-  /* Sidebar */
-  section[data-testid="stSidebar"] {
-    background: #141414;
-    border-right: 1px solid #2a2a2a;
-  }
-
   /* Metric cards */
   div[data-testid="metric-container"] {
-    background: #181818;
-    border: 1px solid #2a2a2a;
     border-radius: 6px;
     padding: 12px 16px;
   }
   div[data-testid="metric-container"] label {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 11px;
-    color: #888;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
   div[data-testid="metric-container"] [data-testid="stMetricValue"] {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 22px;
-    color: #f0e68c;
   }
 
   /* Dataframe */
-  .stDataFrame { border: 1px solid #2a2a2a; border-radius: 6px; }
+  .stDataFrame { border-radius: 6px; }
   .stDataFrame th {
     font-family: 'IBM Plex Mono', monospace;
-    background: #181818 !important;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: #888 !important;
   }
-
-  /* Divider accent */
-  hr { border-color: #2a2a2a; }
 </style>
 """
 
@@ -121,7 +101,7 @@ def render_sidebar() -> dict:
             end_date = st.date_input("End", value=pd.Timestamp("today"))
 
         st.markdown("---")
-        run = st.button("▶  Run Analysis", use_container_width=True)
+        run = st.button("Run Analysis!", use_container_width=True)
 
     return dict(
         tickers_raw=tickers_raw,
@@ -264,7 +244,7 @@ def render_tables(
 
 # ── Plotly chart ─────────────────────────────────────────────────────────────
 
-def build_chart(
+def build_frontier_chart(
     results: FrontierResults,
     miu: pd.Series,
     std_dev: pd.Series,
@@ -357,26 +337,18 @@ def build_chart(
     ))
 
     fig.update_layout(
-        paper_bgcolor=BG,
-        plot_bgcolor=BG,
-        font=dict(family="IBM Plex Mono", color="#e8e8e0"),
+        font=dict(family="IBM Plex Mono"),
         xaxis=dict(
             title="Monthly Volatility (Std Dev)",
             tickformat=".1%",
-            gridcolor=GRID,
-            zerolinecolor=GRID,
             title_font=dict(size=12),
         ),
         yaxis=dict(
             title="Monthly Return",
             tickformat=".2%",
-            gridcolor=GRID,
-            zerolinecolor=GRID,
             title_font=dict(size=12),
         ),
         legend=dict(
-            bgcolor="#141414",
-            bordercolor="#2a2a2a",
             borderwidth=1,
             font=dict(size=11),
         ),
@@ -395,7 +367,7 @@ def render_chart(
     rf_rate: float,
 ) -> None:
     st.markdown("### Efficient Frontier & Capital Market Line")
-    fig = build_chart(results, miu, std_dev, valid_stocks, rf_rate)
+    fig = build_frontier_chart(results, miu, std_dev, valid_stocks, rf_rate)
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
         f"Data: Yahoo Finance · Interval: Monthly · RF Rate: {rf_rate:.4%}/month"
