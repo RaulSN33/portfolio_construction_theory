@@ -98,11 +98,7 @@ def render_sidebar() -> dict:
 
         st.markdown("---")
         st.markdown("**Download Date Range**")
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input("Start", value=pd.Timestamp("2015-01-01"))
-        with col2:
-            end_date = st.date_input("End", value=pd.Timestamp("today"))
+        start_date = st.date_input("Start", value=pd.Timestamp("2015-01-01"))
 
         st.markdown("---")
         run = st.button("Run Analysis!", use_container_width=True)
@@ -110,7 +106,6 @@ def render_sidebar() -> dict:
     return dict(
         tickers_raw=tickers_raw,
         start_date=start_date,
-        end_date=end_date,
         run=run,
     )
 
@@ -135,32 +130,25 @@ def render_analysis_controls(
 
     Returns
     -------
-    dict with keys: start, end, rf_rate
+    dict with keys: end, rf_rate
     """
     st.markdown("### Analysis Parameters")
     st.caption(
-        "Adjust the window and risk-free rate without re-downloading data. "
-        "The frontier and CML update instantly."
+        "Set the backtesting start date and risk-free rate. "
+        "Stats are computed on all history up to that date; "
+        "the buy-and-hold period runs from that date to today."
     )
 
-    col1, col2, col3 = st.columns([3, 3, 2])
+    col1, col2 = st.columns([3, 2])
     with col1:
-        analysis_start = st.date_input(
-            "Analysis window — Start",
-            value=prices_index.min().date(),
-            min_value=prices_index.min().date(),
-            max_value=prices_index.max().date(),
-            key="analysis_start",
-        )
-    with col2:
         analysis_end = st.date_input(
-            "Analysis window — End",
+            "Backtesting Start",
             value=prices_index.max().date(),
             min_value=prices_index.min().date(),
             max_value=prices_index.max().date(),
             key="analysis_end",
         )
-    with col3:
+    with col2:
         rf_rate = st.number_input(
             "Monthly Risk-Free Rate",
             min_value=0.0,
@@ -171,7 +159,7 @@ def render_analysis_controls(
             key="rf_rate",
         )
     st.markdown("---")
-    return dict(start=analysis_start, end=analysis_end, rf_rate=rf_rate)
+    return dict(end=analysis_end, rf_rate=rf_rate)
 
 
 # ── Metric cards ─────────────────────────────────────────────────────────────
@@ -419,3 +407,81 @@ def render_chart(
     st.caption(
         f"Data: Yahoo Finance · Interval: Monthly · RF Rate: {rf_rate:.4%}/month"
     )
+
+
+# ── Backtest chart ────────────────────────────────────────────────────────────
+
+_BACKTEST_COLORS = {
+    "GMV (Unconstrained)":        COLORS["gmv"],
+    "Max Sharpe (Unconstrained)": COLORS["tangency"],
+    "Equal Weight":               COLORS["ew"],
+    "GMV (Constrained)":          COLORS["gmv_constrained"],
+    "Max Sharpe (Constrained)":   COLORS["tangency_constrained"],
+}
+
+
+def render_backtest_section(
+    cumulative: dict,
+    metrics_df: pd.DataFrame,
+    backtest_start: str,
+) -> None:
+    """
+    Render the buy-and-hold backtest cumulative performance chart
+    and the concatenated performance metrics table.
+
+    Parameters
+    ----------
+    cumulative     : dict mapping portfolio name → price_simulation Series
+    metrics_df     : DataFrame with one row per portfolio (from summary_stats)
+    backtest_start : ISO date string for the caption
+    """
+    st.markdown("---")
+    st.markdown("### Buy-and-Hold Backtest")
+    st.caption(
+        f"Portfolios held from {backtest_start} to today · "
+        "initial capital = 1 · monthly returns"
+    )
+
+    # ── Cumulative performance chart ─────────────────────────────────────────
+    fig = go.Figure()
+    for name, series in cumulative.items():
+        color = _BACKTEST_COLORS.get(name, "#aaaaaa")
+        fig.add_trace(go.Scatter(
+            x=series.index,
+            y=series.values,
+            mode="lines",
+            name=name,
+            line=dict(color=color, width=2),
+            hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>Value: %{{y:.3f}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        font=dict(family="IBM Plex Mono"),
+        xaxis=dict(title="Date", title_font=dict(size=12)),
+        yaxis=dict(title="Portfolio Value (start = 1)", title_font=dict(size=12)),
+        legend=dict(borderwidth=1, font=dict(size=11)),
+        margin=dict(l=60, r=40, t=40, b=60),
+        height=460,
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Performance metrics table ─────────────────────────────────────────────
+    st.markdown("### Performance Metrics")
+    fmt_pct  = lambda x: f"{x:.2%}"
+    fmt_2f   = lambda x: f"{x:.2f}"
+    fmt_cols = {
+        "Annualized Return":       fmt_pct,
+        "Annualized Vol":          fmt_pct,
+        "Sharpe Ratio":            fmt_2f,
+        "Max Drawdown":            fmt_pct,
+        "Skewness":                fmt_2f,
+        "Kurtosis":                fmt_2f,
+        "Cornish-Fisher VaR (5%)": fmt_pct,
+        "Historic CVaR (5%)":      fmt_pct,
+    }
+    styled = metrics_df.copy()
+    for col, fn in fmt_cols.items():
+        if col in styled.columns:
+            styled[col] = styled[col].map(fn)
+    st.dataframe(styled, use_container_width=True)

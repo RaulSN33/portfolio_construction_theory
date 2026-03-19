@@ -39,7 +39,7 @@ def fetch_prices(
     tickers: list[str],
     start_date: str,
     end_date: str,
-    interval: str = "1mo",
+    interval: str = "1d",
 ) -> pd.DataFrame:
     """
     Download monthly adjusted close prices from Yahoo Finance.

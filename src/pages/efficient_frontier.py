@@ -4,12 +4,18 @@ pages/efficient_frontier.py
 Efficient Frontier page — logic extracted from the original __main__.py.
 Page config and CSS are handled once by the multi-page router (__main__.py).
 """
+from datetime import date
+
 import pandas as pd
 import streamlit as st
+
+from PortfolioBacktester.entinties import NaiveBacktest
+from PortfolioBacktester.modules.performance_functions import summary_stats
 
 from src.backend.backend import DownloadError, load_market_data, parse_tickers
 from src.dashboard.frontier_dashboard import (
     render_analysis_controls,
+    render_backtest_section,
     render_chart,
     render_header,
     render_metrics,
@@ -41,12 +47,13 @@ if inputs["run"]:
         st.error("Please enter at least 2 tickers.")
         st.stop()
 
+    today_str = str(date.today())
     with st.spinner(f"Downloading data for: {', '.join(stocks)}…"):
         try:
             prices, returns, valid_stocks = _download(
                 tuple(stocks),
                 str(inputs["start_date"]),
-                str(inputs["end_date"]),
+                today_str,
             )
         except DownloadError as e:
             st.error(f"Download failed: {e}")
@@ -78,10 +85,8 @@ if removed:
 # ── Analysis controls (no download triggered) ─────────────────────────────────
 analysis = render_analysis_controls(prices.index)
 
-mask = (
-    (returns.index >= pd.Timestamp(analysis["start"]))
-    & (returns.index <= pd.Timestamp(analysis["end"]))
-)
+# Use all available history up to the backtesting start date
+mask = returns.index <= pd.Timestamp(analysis["end"])
 returns_filtered = returns.loc[mask]
 
 if returns_filtered.shape[0] < 6:
@@ -99,7 +104,61 @@ results = compute_efficient_frontier(miu, sigma, rf_rate=rf_rate)
 with st.spinner("Computing constrained frontier…"):
     constrained = compute_constrained_frontier(miu, sigma, rf_rate=rf_rate)
 
-# ── Render results ────────────────────────────────────────────────────────────
+# ── Render frontier results ───────────────────────────────────────────────────
 render_metrics(valid_stocks, returns_filtered, results, rf_rate=rf_rate)
 render_tables(valid_stocks, results, rf_rate=rf_rate, constrained=constrained)
 render_chart(results, miu, std_dev, valid_stocks, rf_rate=rf_rate, constrained=constrained)
+
+# ── Buy-and-hold backtest for each portfolio ──────────────────────────────────
+backtest_start = str(analysis["end"])
+backtest_end   = str(date.today())
+
+if backtest_start >= backtest_end:
+    st.warning("Backtesting Start must be before today to run the backtest.")
+    st.stop()
+
+portfolios_to_backtest = {
+    "GMV (Unconstrained)":        results.w_gmv,
+    "Max Sharpe (Unconstrained)": results.w_tan,
+    "Equal Weight":               results.w_ew,
+    "GMV (Constrained)":          constrained.w_gmv,
+    "Max Sharpe (Constrained)":   constrained.w_tan,
+}
+
+with st.spinner("Running buy-and-hold backtests…"):
+    cumulative  = {}
+    all_metrics = []
+
+    asset_prices_bt = prices[valid_stocks]
+    # daily_asset_prices, returns, valid_stocks = _download(
+    #             tuple(stocks),
+    #             str(inputs["start_date"]),
+    #             today_str,
+    #         )
+    # asset_prices_bt = prices[valid_stocks]
+
+    for name, weights in portfolios_to_backtest.items():
+        signals_df = pd.DataFrame(
+            {pd.Timestamp(backtest_start): weights},
+            index=valid_stocks,
+        )
+        bt = NaiveBacktest(
+            start_date=backtest_start,
+            end_date=backtest_end,
+            signals_df=signals_df,
+            asset_prices=asset_prices_bt,
+            initial_capital=1,
+        )
+        bt._run_backtest()
+        # bt._asset_returns()
+        # st.dataframe(bt.asset_prices)
+        # st.dataframe(asset_prices_bt)
+        cumulative[name] = bt.price_simulation
+
+        metrics = summary_stats(bt.portfolio_returns, periods_per_year=252)
+        metrics.index = [name]
+        all_metrics.append(metrics)
+
+    metrics_df = pd.concat(all_metrics)
+# st.dataframe(cumulative)
+render_backtest_section(cumulative, metrics_df, backtest_start)
