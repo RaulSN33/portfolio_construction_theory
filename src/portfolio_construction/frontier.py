@@ -61,8 +61,8 @@ def compute_efficient_frontier(
     miu: pd.Series,
     sigma: pd.DataFrame,
     rf_rate: float,
-    n_frontier_pts: int = 65,
-    frontier_step: float = 0.001,
+    n_frontier_pts: int = 45,
+    frontier_step: float = 0.00025,
 ) -> FrontierResults:
     """
     Compute the mean-variance efficient frontier and key portfolios.

@@ -7,6 +7,7 @@ data tables, and chart building live here.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -122,7 +123,7 @@ def render_header() -> None:
 
 def render_analysis_controls(
     prices_index: pd.DatetimeIndex,
-    default_rf: float = 0.001,
+    default_rf: float = 0.035,
 ) -> dict:
     """
     Render the interactive analysis controls in the main content area.
@@ -143,21 +144,24 @@ def render_analysis_controls(
     with col1:
         analysis_end = st.date_input(
             "Backtesting Start",
-            value=prices_index.max().date(),
+            value=prices_index.max().date() - timedelta(days = 366),
             min_value=prices_index.min().date(),
             max_value=prices_index.max().date(),
             key="analysis_end",
         )
+        # st.markdown(type(prices_index.max().date()))
+        # st.markdown()
     with col2:
         rf_rate = st.number_input(
-            "Monthly Risk-Free Rate",
+            "Annual Risk-Free Rate",
             min_value=0.0,
-            max_value=0.05,
+            max_value=0.1,
             value=default_rf,
             step=0.0001,
             format="%.4f",
             key="rf_rate",
-        )
+        )/252
+
     st.markdown("---")
     return dict(end=analysis_end, rf_rate=rf_rate)
 
@@ -175,7 +179,7 @@ def render_metrics(
     with c1:
         st.metric("Tickers", len(valid_stocks))
     with c2:
-        st.metric("Months", len(returns))
+        st.metric("Days", len(returns))
     with c3:
         st.metric("GMV Return", f"{results.gmv_ret:.2%}")
     with c4:
@@ -219,9 +223,9 @@ def render_tables(
     for name, (_, ret, std) in portfolios.items():
         rows.append({
             "Portfolio":       name,
-            "Monthly Return":  f"{ret:.4%}",
-            "Monthly Std Dev": f"{std:.4%}",
-            "Sharpe Ratio":    f"{sharpe(ret, std, rf_rate):.3f}",
+            "Mean Daily Return":  f"{ret:.4%}",
+            "Daily Std Dev": f"{std:.4%}",
+            "Daily Sharpe Ratio":    f"{sharpe(ret, std, rf_rate):.3f}",
         })
 
     c11, c21 = st.columns(2)
@@ -234,8 +238,15 @@ def render_tables(
     with c21:
         st.markdown("### Portfolio Weights")
         st.dataframe(
-            pd.DataFrame(weights_dict, index=valid_stocks),
+            pd.DataFrame(weights_dict, index=valid_stocks)*100,
             use_container_width=True,
+            column_config={
+                "EW": st.column_config.NumberColumn(format="%.2f%%"),
+                "GMV": st.column_config.NumberColumn(format="%.2f%%"),
+                "Max Sharpe": st.column_config.NumberColumn(format="%.2f%%"),
+                "C-GMV": st.column_config.NumberColumn(format="%.2f%%"),
+                "C-Max Sharpe": st.column_config.NumberColumn(format="%.2f%%"),
+            }
         )
     st.markdown("---")
 
@@ -373,12 +384,12 @@ def build_frontier_chart(
     fig.update_layout(
         font=dict(family="IBM Plex Mono"),
         xaxis=dict(
-            title="Monthly Volatility (Std Dev)",
+            title="Daily Volatility (Std Dev)",
             tickformat=".1%",
             title_font=dict(size=12),
         ),
         yaxis=dict(
-            title="Monthly Return",
+            title="Daily Return",
             tickformat=".2%",
             title_font=dict(size=12),
         ),
@@ -405,7 +416,7 @@ def render_chart(
     fig = build_frontier_chart(results, miu, std_dev, valid_stocks, rf_rate, constrained)
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        f"Data: Yahoo Finance · Interval: Monthly · RF Rate: {rf_rate:.4%}/month"
+        f"Data: Yahoo Finance · Interval: Daily · RF Rate: {rf_rate:.4%}/Day"
     )
 
 
@@ -439,7 +450,7 @@ def render_backtest_section(
     st.markdown("### Buy-and-Hold Backtest")
     st.caption(
         f"Portfolios held from {backtest_start} to today · "
-        "initial capital = 1 · monthly returns"
+        "initial capital = 1 · Daily returns"
     )
 
     # ── Cumulative performance chart ─────────────────────────────────────────
@@ -467,18 +478,18 @@ def render_backtest_section(
     st.plotly_chart(fig, use_container_width=True)
 
     # ── Performance metrics table ─────────────────────────────────────────────
-    st.markdown("### Performance Metrics")
+    st.markdown("### Backtested Performance Metrics")
     fmt_pct  = lambda x: f"{x:.2%}"
     fmt_2f   = lambda x: f"{x:.2f}"
     fmt_cols = {
-        "Annualized Return":       fmt_pct,
-        "Annualized Vol":          fmt_pct,
-        "Sharpe Ratio":            fmt_2f,
-        "Max Drawdown":            fmt_pct,
-        "Skewness":                fmt_2f,
-        "Kurtosis":                fmt_2f,
+        "Annualized Return": fmt_pct,
+        "Annualized Vol": fmt_pct,
+        "Sharpe Ratio": fmt_2f,
+        "Max Drawdown": fmt_pct,
+        "Skewness": fmt_2f,
+        "Kurtosis": fmt_2f,
         "Cornish-Fisher VaR (5%)": fmt_pct,
-        "Historic CVaR (5%)":      fmt_pct,
+        "Historic CVaR (5%)": fmt_pct,
     }
     styled = metrics_df.copy()
     for col, fn in fmt_cols.items():

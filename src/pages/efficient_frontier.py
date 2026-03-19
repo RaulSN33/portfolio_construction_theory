@@ -130,12 +130,6 @@ with st.spinner("Running buy-and-hold backtests…"):
     all_metrics = []
 
     asset_prices_bt = prices[valid_stocks]
-    # daily_asset_prices, returns, valid_stocks = _download(
-    #             tuple(stocks),
-    #             str(inputs["start_date"]),
-    #             today_str,
-    #         )
-    # asset_prices_bt = prices[valid_stocks]
 
     for name, weights in portfolios_to_backtest.items():
         signals_df = pd.DataFrame(
@@ -152,8 +146,9 @@ with st.spinner("Running buy-and-hold backtests…"):
         bt._run_backtest()
         # bt._asset_returns()
         # st.dataframe(bt.asset_prices)
-        # st.dataframe(asset_prices_bt)
+        # st.dataframe(bt.portfolio_returns)
         cumulative[name] = bt.price_simulation
+        cumulative[name].iloc[0] = 1
 
         metrics = summary_stats(bt.portfolio_returns, periods_per_year=252)
         metrics.index = [name]
