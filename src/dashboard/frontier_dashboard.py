@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 from src.portfolio_construction.frontier import FrontierResults, sharpe
@@ -496,3 +497,349 @@ def render_backtest_section(
         if col in styled.columns:
             styled[col] = styled[col].map(fn)
     st.dataframe(styled, use_container_width=True)
+
+
+# ── Fama-French 3-Factor Attribution ─────────────────────────────────────────
+
+_ATTR_COLORS = {
+    "actual": "#888888",
+    "factor": "#4e8bc4",
+    "idio":   "#ff9f40",
+    "mkt":    "#4e8bc4",
+    "smb":    "#F24C4B",
+    "hml":    "#27ae60",
+    "alpha":  "#8e44ad",
+}
+
+
+def _hex_rgba(hex_color: str, alpha: float = 0.75) -> str:
+    """Convert a hex color string to an rgba(...) string for Plotly fills."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def render_attribution_controls(portfolio_names: list[str]) -> dict:
+    """
+    Render the portfolio selector, rolling window slider, and run button
+    for the FF3 attribution section.
+
+    Returns
+    -------
+    dict with keys: portfolio (str), window_size (int), run (bool)
+    """
+    st.markdown("---")
+    st.markdown("### Fama-French 3-Factor Performance Attribution")
+    st.caption(
+        "Decompose portfolio returns into Market (Mkt-RF), Size (SMB), Value (HML), "
+        "Alpha, and Idiosyncratic components using rolling OLS on a Vanguard-ETF-constructed "
+        "factor model."
+    )
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        selected = st.selectbox(
+            "Select Portfolio",
+            options=portfolio_names,
+            key="attr_portfolio_select",
+        )
+    with col2:
+        window_size = st.slider(
+            "Rolling Window (trading days)",
+            min_value=126,
+            max_value=756,
+            value=504,
+            step=63,
+            key="attr_window_size",
+            help="1 year ≈ 252 days. Default is 2 years (504 days).",
+        )
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        run = st.button("▶ Run Attribution", use_container_width=True, key="attr_run")
+
+    return dict(portfolio=selected, window_size=window_size, run=run)
+
+
+def build_cumulative_decomp_chart(
+    portfolio_results: pd.DataFrame,
+    portfolio_name: str,
+    window_size: int,
+) -> go.Figure:
+    """
+    Two-panel cumulative return decomposition chart.
+    Top panel  : Actual return vs Factor return vs Idiosyncratic return.
+    Bottom panel: Individual factor contributions (Market, SMB, HML, Alpha).
+    """
+    cumsum = portfolio_results[[
+        "actual_return", "factor_return", "idio_return",
+        "ret_mkt", "ret_smb", "ret_hml", "ret_alpha",
+    ]].cumsum()
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.10,
+        subplot_titles=(
+            "Actual vs Factor vs Idiosyncratic",
+            "Factor Components  (Market · SMB · HML · Alpha)",
+        ),
+    )
+
+    # ── Top panel ─────────────────────────────────────────────────────────────
+    top_traces = [
+        ("actual_return", "Actual Return",        _ATTR_COLORS["actual"], "solid", 2.5),
+        ("factor_return", "Total Factor Return",  _ATTR_COLORS["factor"], "solid", 2.0),
+        ("idio_return",   "Idiosyncratic Return", _ATTR_COLORS["idio"],   "solid",  1.5),
+    ]
+    for col, label, color, dash, width in top_traces:
+        fig.add_trace(go.Scatter(
+            x=cumsum.index, y=cumsum[col],
+            name=label, mode="lines",
+            line=dict(color=color, width=width, dash=dash),
+            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.2%}}<extra></extra>",
+        ), row=1, col=1)
+
+    fig.add_hline(y=0, line=dict(color="#666666", dash="dot", width=0.8), row=1, col=1)
+
+    # ── Bottom panel ──────────────────────────────────────────────────────────
+    bottom_traces = [
+        ("ret_mkt",   "Market (Mkt-RF)", _ATTR_COLORS["mkt"],   "solid", 1.8),
+        ("ret_smb",   "Size (SMB)",      _ATTR_COLORS["smb"],   "solid", 1.8),
+        ("ret_hml",   "Value (HML)",     _ATTR_COLORS["hml"],   "solid", 1.8),
+        # ("ret_alpha", "Alpha",           _ATTR_COLORS["alpha"], "solid",  1.5),
+    ]
+    for col, label, color, dash, width in bottom_traces:
+        fig.add_trace(go.Scatter(
+            x=cumsum.index, y=cumsum[col],
+            name=label, mode="lines",
+            line=dict(color=color, width=width, dash=dash),
+            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.2%}}<extra></extra>",
+        ), row=2, col=1)
+
+    fig.add_hline(y=0, line=dict(color="#666666", dash="dot", width=0.8), row=2, col=1)
+
+    fig.update_yaxes(tickformat=".1%")
+    fig.update_layout(
+        font=dict(family="IBM Plex Mono"),
+        title=dict(
+            text=f"{portfolio_name} — Cumulative Return Decomposition (Rolling {window_size}d FF3)",
+            font=dict(size=14),
+        ),
+        height=680,
+        hovermode="x unified",
+        legend=dict(borderwidth=1, font=dict(size=11)),
+        margin=dict(l=60, r=40, t=80, b=60),
+    )
+    return fig
+
+
+def build_return_attribution_chart(
+    portfolio_results: pd.DataFrame,
+    portfolio_name: str,
+    window_size: int,
+    smoothing_days: int = 5,
+) -> go.Figure:
+    """
+    Stacked area chart showing the % share of each factor in the total
+    absolute return (smoothed with a rolling mean to reduce noise).
+    """
+    abs_components = portfolio_results[
+        ["ret_mkt", "ret_smb", "ret_hml", "ret_alpha", "idio_return"]
+    ].abs()
+    abs_total = abs_components.sum(axis=1)
+    pct = (
+        abs_components.div(abs_total, axis=0)
+        .rolling(smoothing_days)
+        .mean()
+        .dropna()
+    )
+
+    series = [
+        ("ret_mkt",     "Market (Mkt-RF)", _ATTR_COLORS["mkt"]),
+        ("ret_smb",     "Size (SMB)",      _ATTR_COLORS["smb"]),
+        ("ret_hml",     "Value (HML)",     _ATTR_COLORS["hml"]),
+        ("ret_alpha",   "Alpha",           _ATTR_COLORS["alpha"]),
+        ("idio_return", "Idiosyncratic",   _ATTR_COLORS["idio"]),
+    ]
+
+    fig = go.Figure()
+    for col, label, color in series:
+        fig.add_trace(go.Scatter(
+            x=pct.index,
+            y=pct[col],
+            name=label,
+            mode="lines",
+            stackgroup="one",
+            fillcolor=_hex_rgba(color, 0.75),
+            line=dict(width=0.5, color=color),
+            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.1%}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        font=dict(family="IBM Plex Mono"),
+        title=dict(
+            text=(
+                f"{portfolio_name} — Return Attribution by Factor "
+                f"(% of |total|, {smoothing_days}d smoothed, Rolling {window_size}d FF3)"
+            ),
+            font=dict(size=14),
+        ),
+        xaxis=dict(title="Date"),
+        yaxis=dict(title="Share of Total Return", tickformat=".0%", range=[0, 1]),
+        legend=dict(borderwidth=1, font=dict(size=11)),
+        height=420,
+        margin=dict(l=60, r=40, t=60, b=60),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def build_risk_decomp_chart(
+    portfolio_results: pd.DataFrame,
+    portfolio_name: str,
+    window_size: int,
+) -> go.Figure:
+    """
+    Stacked area chart showing the % share of total variance from each factor
+    and idiosyncratic risk (Var = β'Ωβ + σ²_idio decomposition).
+    """
+    risk_df = portfolio_results[["var_mkt", "var_smb", "var_hml", "idio_var", "total_var"]].copy()
+    risk_pct = (
+        risk_df[["var_mkt", "var_smb", "var_hml", "idio_var"]]
+        .div(risk_df["total_var"], axis=0)
+        .fillna(0)
+    )
+
+    series = [
+        ("var_mkt",  "Market Risk (Mkt-RF)", _ATTR_COLORS["mkt"]),
+        ("var_smb",  "Size Risk (SMB)",      _ATTR_COLORS["smb"]),
+        ("var_hml",  "Value Risk (HML)",     _ATTR_COLORS["hml"]),
+        ("idio_var", "Idiosyncratic Risk",   _ATTR_COLORS["idio"]),
+    ]
+
+    fig = go.Figure()
+    for col, label, color in series:
+        fig.add_trace(go.Scatter(
+            x=risk_pct.index,
+            y=risk_pct[col],
+            name=label,
+            mode="lines",
+            stackgroup="one",
+            fillcolor=_hex_rgba(color, 0.75),
+            line=dict(width=0.5, color=color),
+            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.1%}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        font=dict(family="IBM Plex Mono"),
+        title=dict(
+            text=(
+                f"{portfolio_name} — Risk Decomposition  Var = β'Ωβ + σ²_idio "
+                f"(Rolling {window_size}d FF3)"
+            ),
+            font=dict(size=14),
+        ),
+        xaxis=dict(title="Date"),
+        yaxis=dict(title="Share of Total Variance", tickformat=".0%", range=[0, 1]),
+        legend=dict(borderwidth=1, font=dict(size=11)),
+        height=420,
+        margin=dict(l=60, r=40, t=60, b=60),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def build_rolling_params_chart(
+    portfolio_results: pd.DataFrame,
+    portfolio_name: str,
+    window_size: int,
+) -> go.Figure:
+    """
+    Four-panel chart with rolling Market beta, SMB beta, HML beta, and Alpha.
+    """
+    params = [
+        ("beta_mkt", "Market Beta (Mkt-RF)", _ATTR_COLORS["mkt"],   1.0),
+        ("beta_smb", "Size Beta (SMB)",       _ATTR_COLORS["smb"],   0.0),
+        ("beta_hml", "Value Beta (HML)",      _ATTR_COLORS["hml"],   0.0),
+        ("alpha",    "Alpha",                 _ATTR_COLORS["alpha"], 0.0),
+    ]
+
+    fig = make_subplots(
+        rows=4, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        subplot_titles=[label for _, label, _, _ in params],
+    )
+
+    for row_idx, (col, label, color, hline_val) in enumerate(params, start=1):
+        fig.add_trace(go.Scatter(
+            x=portfolio_results.index,
+            y=portfolio_results[col],
+            name=label,
+            mode="lines",
+            line=dict(color=color, width=1.8),
+            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}<br>%{{y:.4f}}<extra></extra>",
+        ), row=row_idx, col=1)
+
+        fig.add_hline(
+            y=hline_val,
+            line=dict(color="#666666", dash="dot", width=0.8),
+            row=row_idx, col=1,
+        )
+
+    # Format alpha axis as percentage
+    fig.update_yaxes(tickformat=".2%", row=4, col=1)
+
+    fig.update_layout(
+        font=dict(family="IBM Plex Mono"),
+        title=dict(
+            text=f"{portfolio_name} — Rolling FF3 Parameters ({window_size}d window)",
+            font=dict(size=14),
+        ),
+        height=860,
+        showlegend=False,
+        hovermode="x unified",
+        margin=dict(l=60, r=40, t=80, b=60),
+    )
+    return fig
+
+
+def render_multifactor_attribution_section(results) -> None:
+    """
+    Render the full FF3 attribution section: static-param metrics + 4 charts.
+
+    Parameters
+    ----------
+    results : MultiFactorAttributionResults
+    """
+    # st.markdown("#### Full-Sample Factor Loadings")
+    # p = results.static_params
+    # c1, c2, c3, c4 = st.columns(4)
+    # with c1:
+    #     st.metric("Alpha (daily)", f"{p['const']:.4%}")
+    # with c2:
+    #     st.metric("Market Beta", f"{p['Mkt-RF']:.3f}")
+    # with c3:
+    #     st.metric("Size Beta (SMB)", f"{p['SMB']:.3f}")
+    # with c4:
+    #     st.metric("Value Beta (HML)", f"{p['HML']:.3f}")
+
+    pr = results.portfolio_results
+    # st.dataframe(pr)
+
+    st.plotly_chart(
+        build_cumulative_decomp_chart(pr, results.portfolio_name, results.window_size),
+        use_container_width=True,
+    )
+    st.plotly_chart(
+        build_return_attribution_chart(pr, results.portfolio_name, results.window_size),
+        use_container_width=True,
+    )
+    st.plotly_chart(
+        build_risk_decomp_chart(pr, results.portfolio_name, results.window_size),
+        use_container_width=True,
+    )
+    st.plotly_chart(
+        build_rolling_params_chart(pr, results.portfolio_name, results.window_size),
+        use_container_width=True,
+    )

@@ -10,7 +10,7 @@ __pycache__/
 .github/
 .claude/
 resources/
-
+**.csv
 
 # Distribution / packaging
 .Python
@@ -215,3 +215,4 @@ __marimo__/
 backtester_debug.py
 .Rhistory
 backtester_debug.py
+Max Sharpe (Unconstrained).csv

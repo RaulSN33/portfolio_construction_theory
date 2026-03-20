@@ -15,14 +15,19 @@ from PortfolioBacktester.modules.performance_functions import summary_stats
 from src.backend.backend import DownloadError, load_market_data, parse_tickers
 from src.dashboard.frontier_dashboard import (
     render_analysis_controls,
+    render_attribution_controls,
     render_backtest_section,
     render_chart,
     render_header,
     render_metrics,
+    render_multifactor_attribution_section,
     render_sidebar,
     render_tables,
 )
 from src.portfolio_construction.frontier import compute_efficient_frontier
+from src.portfolio_construction.multifactor_performance_attribution import (
+    compute_multifactor_attribution,
+)
 from src.portfolio_construction.optimizations import compute_constrained_frontier
 
 
@@ -128,6 +133,7 @@ portfolios_to_backtest = {
 with st.spinner("Running buy-and-hold backtests…"):
     cumulative  = {}
     all_metrics = []
+    backtested_daily_weights = {}
 
     asset_prices_bt = prices[valid_stocks]
 
@@ -154,6 +160,43 @@ with st.spinner("Running buy-and-hold backtests…"):
         metrics.index = [name]
         all_metrics.append(metrics)
 
+        # st.markdown(name)
+        backtested_daily_weights[name] = bt._reweight_daily_weights(bt.backtested_daily_weights)
+        # csv.to_csv(f'{name}.csv')
+
     metrics_df = pd.concat(all_metrics)
-# st.dataframe(cumulative)
 render_backtest_section(cumulative, metrics_df, backtest_start)
+
+# ── Fama-French 3-Factor Attribution ─────────────────────────────────────────
+attribution_inputs = render_attribution_controls(list(backtested_daily_weights.keys()))
+
+if attribution_inputs["run"]:
+    selected_name    = attribution_inputs["portfolio"]
+    window_size      = attribution_inputs["window_size"]
+    # weights_array    = backtested_daily_weights[selected_name]
+    # selected_weights = pd.Series(weights_array, index=valid_stocks)
+    selected_weights = backtested_daily_weights[selected_name]
+    # st.dataframe(selected_weights)
+
+    fred_api_key = st.secrets.get("FRED_API_KEY", "")
+    if not fred_api_key:
+        st.error("FRED_API_KEY not found in .streamlit/secrets.toml")
+        st.stop()
+
+    with st.spinner(f"Running FF3 attribution for {selected_name}…"):
+        try:
+            attr_results = compute_multifactor_attribution(
+                portfolio_name=selected_name,
+                weights=selected_weights,
+                prices=prices,
+                window_size=window_size,
+                fred_api_key=fred_api_key,
+            )
+        except ValueError as e:
+            st.error(str(e))
+            st.stop()
+
+    st.session_state["attr_results"] = attr_results
+
+if "attr_results" in st.session_state:
+    render_multifactor_attribution_section(st.session_state["attr_results"])
