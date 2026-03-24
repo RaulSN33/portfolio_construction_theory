@@ -581,7 +581,7 @@ def build_cumulative_decomp_chart(
         vertical_spacing=0.10,
         subplot_titles=(
             "Actual vs Factor vs Idiosyncratic",
-            "Factor Components  (Market · SMB · HML · Alpha)",
+            "Factor Components  (Market · SMB · HML)",
         ),
     )
 
@@ -622,7 +622,7 @@ def build_cumulative_decomp_chart(
     fig.update_layout(
         font=dict(family="IBM Plex Mono"),
         title=dict(
-            text=f"{portfolio_name} — Cumulative Return Decomposition (Rolling {window_size}d FF3)",
+            text=f"{portfolio_name}; Cumulative Return Decomposition (Rolling {window_size}d FF3)",
             font=dict(size=14),
         ),
         height=680,
@@ -679,7 +679,7 @@ def build_return_attribution_chart(
         font=dict(family="IBM Plex Mono"),
         title=dict(
             text=(
-                f"{portfolio_name} — Return Attribution by Factor "
+                f"{portfolio_name};  Return Attribution by Factor "
                 f"(% of |total|, {smoothing_days}d smoothed, Rolling {window_size}d FF3)"
             ),
             font=dict(size=14),
@@ -734,7 +734,7 @@ def build_risk_decomp_chart(
         font=dict(family="IBM Plex Mono"),
         title=dict(
             text=(
-                f"{portfolio_name} — Risk Decomposition  Var = β'Ωβ + σ²_idio "
+                f"{portfolio_name}; Risk Decomposition"
                 f"(Rolling {window_size}d FF3)"
             ),
             font=dict(size=14),
@@ -793,7 +793,7 @@ def build_rolling_params_chart(
     fig.update_layout(
         font=dict(family="IBM Plex Mono"),
         title=dict(
-            text=f"{portfolio_name} — Rolling FF3 Parameters ({window_size}d window)",
+            text=f"{portfolio_name}; Rolling FF3 Parameters ({window_size}d window)",
             font=dict(size=14),
         ),
         height=860,
